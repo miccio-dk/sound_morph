@@ -1,6 +1,7 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from typing import *
 
 from .cvae_base import CvaeBase
 from .utils import spec_to_db
@@ -24,7 +25,7 @@ class CvaeInception(CvaeBase):
     def _loss_function(self, x_true, x_rec, mean, log_var, z):
         # reconstruction
         #rec = torch.nn.functional.binary_cross_entropy(x_rec, x_true, reduction='mean')
-        rec = torch.nn.functional.mse_loss(x_rec, x_true, reduction='mean')
+        rec = F.mse_loss(x_rec, x_true, reduction='mean')
         # db mag reconstruction
         x_rec_db = spec_to_db(x_rec)
         x_true_db = spec_to_db(x_true)
@@ -51,16 +52,14 @@ class CvaeInception(CvaeBase):
         hidden_dec = self.fc_rep(zc)
         x_rec = self.decoder(hidden_dec)
         return x_rec, mean, log_var, z
-    
+
     # TODO encode() / decode() functions?
-                                                                
+
     def forward(self, z, c):
         z = torch.cat((z, c), dim=-1)
         hidden_dec = self.fc_rep(z)
         return self.decoder(hidden_dec)
 
-
-    
 # Inception-vae - https://github.com/koshian2/inception-vae
 ## Encoder
 def create_encoder_single_conv(in_chs, out_chs, kernel):
@@ -71,35 +70,28 @@ def create_encoder_single_conv(in_chs, out_chs, kernel):
         nn.ReLU(inplace=True))
 
 class EncoderInceptionModuleSingle(nn.Module):
-    def __init__(self, channels):
+    def __init__(self, channels, conv_layer_kernel_sizes : List[int] = list(range(1, 8, 2))):
         assert channels % 2 == 0
         super().__init__()
         # put bottle-neck layers before convolution
         bn_ch = channels // 2
-        self.bottleneck = create_encoder_single_conv(channels, bn_ch, 1)
+        self.bottleneck = create_decoder_single_conv(channels, bn_ch, 1)
         # bn -> Conv1, 3, 5
-        self.conv1 = create_encoder_single_conv(bn_ch, channels, 1)
-        self.conv3 = create_encoder_single_conv(bn_ch, channels, 3)
-        self.conv5 = create_encoder_single_conv(bn_ch, channels, 5)
-        self.conv7 = create_encoder_single_conv(bn_ch, channels, 7)
+        self.conv_layers = nn.ModuleList([create_decoder_single_conv(bn_ch, channels, kernel_size) for kernel_size in conv_layer_kernel_sizes])
         # pool-proj(no-bottle neck)
-        self.pool3 = nn.MaxPool2d(3, stride=1, padding=1)
-        self.pool5 = nn.MaxPool2d(5, stride=1, padding=2)
+        self.pool_layers = nn.ModuleList([nn.MaxPool2d(3, stride=1, padding=1), nn.MaxPool2d(5, stride=1, padding=2)])
+
 
     def forward(self, x):
         # Original inception is concatenation, but use simple addition instead
         bn = self.bottleneck(x)
-        out = self.conv1(bn) + self.conv3(bn) + self.conv5(bn) + self.conv7(bn) + self.pool3(x) + self.pool5(x)
+        out = sum(conv(bn) for conv in self.conv_layers) + sum(pool(x) for pool in self.pool_layers)
         return out
 
 class EncoderModule(nn.Module):
     def __init__(self, chs, repeat_num, use_inception):
         super().__init__()
-        if use_inception:
-            layers = [EncoderInceptionModuleSingle(chs) for i in range(repeat_num)]
-        else:
-            layers = [create_encoder_single_conv(chs, chs, 3) for i in range(repeat_num)]
-        self.convs = nn.Sequential(*layers)
+        self.convs = nn.Sequential(*[EncoderInceptionModuleSingle(chs) if use_inception else create_encoder_single_conv(chs, chs, 3) for _ in range(repeat_num)])
 
     def forward(self, x):
         return self.convs(x)
@@ -142,39 +134,30 @@ def create_decoder_single_conv(in_chs, out_chs, kernel):
         nn.ReLU(inplace=True))
 
 class DecoderInceptionModuleSingle(nn.Module):
-    def __init__(self, channels):
+    def __init__(self, channels, conv_layer_kernel_sizes : List[int] = list(range(1, 8, 2))):
         assert channels % 2 == 0
         super().__init__()
         # put bottle-neck layers before convolution
         bn_ch = channels // 4
         self.bottleneck = create_decoder_single_conv(channels, bn_ch, 1)
         # bn -> Conv1, 3, 5
-        self.conv1 = create_decoder_single_conv(bn_ch, channels, 1)
-        self.conv3 = create_decoder_single_conv(bn_ch, channels, 3)
-        self.conv5 = create_decoder_single_conv(bn_ch, channels, 5)
-        self.conv7 = create_decoder_single_conv(bn_ch, channels, 7)
+        self.conv_layers = nn.ModuleList([create_decoder_single_conv(bn_ch, channels, kernel_size) for kernel_size in conv_layer_kernel_sizes])
         # pool-proj(no-bottle neck)
-        self.pool3 = nn.MaxPool2d(3, stride=1, padding=1)
-        self.pool5 = nn.MaxPool2d(5, stride=1, padding=2)
+        self.pool_layers = nn.ModuleList([nn.MaxPool2d(3, stride=1, padding=1), nn.MaxPool2d(5, stride=1, padding=2)])
 
     def forward(self, x):
         # Original inception is concatenation, but use simple addition instead
         bn = self.bottleneck(x)
-        out = self.conv1(bn) + self.conv3(bn) + self.conv5(bn) + self.conv7(bn) + self.pool3(x) + self.pool5(x)
+        out = sum(conv(bn) for conv in self.conv_layers) + sum(pool(x) for pool in self.pool_layers)
         return out
 
 class DecoderModule(nn.Module):
     def __init__(self, chs, repeat_num, use_inception):
         super().__init__()
-        if use_inception:
-            layers = [DecoderInceptionModuleSingle(chs) for i in range(repeat_num)]
-        else:
-            layers = [create_decoder_single_conv(chs, chs, 3) for i in range(repeat_num)]
-        self.convs = nn.Sequential(*layers)
+        self.convs = nn.Sequential(*[DecoderInceptionModuleSingle(chs) if use_inception else create_decoder_single_conv(chs, chs, 3) for _ in range(repeat_num)])
 
     def forward(self, x):
         return self.convs(x)
-
 
 class Decoder(nn.Module):
     def __init__(self, out_channel_size, use_inception, repeat_per_module):
