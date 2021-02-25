@@ -11,7 +11,7 @@ cd ./sound_morph
 conda create --name sound_morph
 conda activate sound_morph
 conda install pytorch torchvision torchaudio cudatoolkit=10.2 -c pytorch
-conda install scipy pandas scikit-learn librosa tqdm matplotlib seaborn
+conda install scipy pandas scikit-learn librosa tqdm matplotlib seaborn pytorch_lightning
 conda install pip nodejs jupyterlab
 ...
 ```
