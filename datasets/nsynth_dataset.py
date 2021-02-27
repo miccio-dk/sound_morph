@@ -37,9 +37,15 @@ class NsynthDataset(Dataset):
         return sample, item
 
     def load_data(self):
-        filepath = osp.join(self.dataset_path, 'examples.json')
-        #print(filepath)
-        _df = pd.read_json(filepath).T
+        filepath_cache = osp.join(self.dataset_path, 'examples_cache.pkl')
+        if osp.exists(filepath_cache):
+            #print(f'Loading cached data: {filepath_cache}')
+            _df = pd.read_pickle(filepath_cache)
+        else:
+            filepath = osp.join(self.dataset_path, 'examples.json')
+            #print(f'Caching data: {filepath}')
+            _df = pd.read_json(filepath).T
+            _df.to_pickle(filepath_cache)
         # filter data
         if self.pitches:
             _df = _df[_df['pitch'].isin(self.pitches)]
@@ -49,4 +55,5 @@ class NsynthDataset(Dataset):
             _df = _df[_df['instrument_source'].isin(self.instrument_sources)]
         if self.instrument_families:
             _df = _df[_df['instrument_family'].isin(self.instrument_families)]
-        self.df = _df 
+        self.df = _df
+        #print(f'Data: {_df.shape}')
