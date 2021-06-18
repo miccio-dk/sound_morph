@@ -17,6 +17,8 @@ from pytorch_lightning.callbacks import LearningRateMonitor, EarlyStopping
 from datasets.nsynth_datamodule import NsynthDataModule
 from models.cvae_resnet import CvaeResnet
 from models.cvae_inception import CvaeInception
+from models.vae_inception import VaeInception
+from models.vae_inception_custom import VaeInceptionCustom
 
 
 def main(args):
@@ -26,11 +28,24 @@ def main(args):
     with open(args.cfg_path, 'r') as fp:
         cfg = json.load(fp)
     cfg_train = cfg['train']
+    print('### TRAIN CONFIGS:')
     pprint(cfg_train)
+    print('### MODEL CONFIGS:')
+    pprint(cfg['model'])
     #os.environ['CUDA_VISIBLE_DEVICES'] = cfg_train['trainer_kwargs']['gpus']
         
-    # init model
-    model = CvaeInception(cfg['model'])
+    # load or init model
+    ModelClass = {
+        'cvae': CvaeInception,
+        'vae': VaeInception,
+        'vae_cstm': VaeInceptionCustom
+    }[cfg_train['type']]
+    if args.ckpt_path:
+        print("Loading pretrained model..")
+        model = ModelClass.load_from_checkpoint(checkpoint_path=args.ckpt_path, map_location=None)
+    else:
+        print("Initing new model..")
+        model = ModelClass(cfg['model'])
     
     # init data loader
     dm = NsynthDataModule(
@@ -40,7 +55,7 @@ def main(args):
     dm.setup()
     
     # logger
-    log_name = '{}_{}'.format(CvaeInception.model_name, cfg_train['descr'])
+    log_name = '{}_{}'.format(ModelClass.model_name, cfg_train['descr'])
     logger = TensorBoardLogger(save_dir='logs', name=log_name)
     
     # callbacks
@@ -61,6 +76,7 @@ def main(args):
 if __name__ == '__main__':
     parser = ArgumentParser()
     parser.add_argument('cfg_path', type=str)
+    parser.add_argument('--ckpt_path', type=str)
     args = parser.parse_args()
 
     main(args)

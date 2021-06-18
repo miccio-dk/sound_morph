@@ -1,6 +1,7 @@
 import torch
-
 from pytorch_lightning import LightningModule
+
+from .utils import pick_optimizer
 
 class CvaeBase(LightningModule):
     def __init__(self, configs):
@@ -38,7 +39,8 @@ class CvaeBase(LightningModule):
         return mean + eps * std
 
     def configure_optimizers(self):
-        optimizer = torch.optim.Adam(self.parameters(), lr=self.configs['lr'])
+        OptimClass = pick_optimizer(self.configs['optim'])
+        optimizer = OptimClass(self.parameters(), **self.configs['optim_kwargs'])
         lr_scheduler = {
             'scheduler': torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, **self.configs['lr_scheduler']),
             'monitor': 'val_loss'

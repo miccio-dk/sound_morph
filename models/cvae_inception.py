@@ -11,6 +11,7 @@ class CvaeInception(CvaeBase):
     
     def __init__(self, configs):
         super().__init__(configs)
+        self.db_weight = 1
         use_inception, repeat_per_block = configs['use_inception'], configs['repeat_per_block']
         # Encoder
         self.encoder = Encoder(configs['channel_size'], use_inception, repeat_per_block)
@@ -26,13 +27,13 @@ class CvaeInception(CvaeBase):
         #rec = torch.nn.functional.binary_cross_entropy(x_rec, x_true, reduction='mean')
         rec = torch.nn.functional.mse_loss(x_rec, x_true, reduction='mean')
         # db mag reconstruction
-        x_rec_db = spec_to_db(x_rec)
-        x_true_db = spec_to_db(x_true)
+        x_rec_db = spec_to_db(x_rec, **self.configs['db_kwargs'])
+        x_true_db = spec_to_db(x_true, **self.configs['db_kwargs'])
         rec_db = F.mse_loss(x_rec_db, x_true_db, reduction='mean')
         # kl divergence
         kld = torch.mean(-0.5 * torch.sum(1 + log_var - mean.pow(2) - log_var.exp(), dim=1), dim=0)
         # total
-        loss = rec + (rec_db * self.configs['db_coeff']) + (kld * self.configs['kl_coeff'])
+        loss = rec + (rec_db * self.configs['db_coeff'] * self.db_weight) + (kld * self.configs['kl_coeff'])
         return {
             'rec': rec, 
             'rec_db': rec_db,
@@ -58,7 +59,10 @@ class CvaeInception(CvaeBase):
         z = torch.cat((z, c), dim=-1)
         hidden_dec = self.fc_rep(z)
         return self.decoder(hidden_dec)
-
+    
+    def on_epoch_start(self):
+        self.db_weight *= self.configs['db_decay']
+            
 
     
 # Inception-vae - https://github.com/koshian2/inception-vae

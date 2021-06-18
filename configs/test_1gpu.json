@@ -3,8 +3,8 @@
     "descr": "1pitch_1gpu",
     "num_workers": 16,
     "batch_size": 28,
-    "max_epochs": 5000,
-    "patience": 100,
+    "max_epochs": 10000,
+    "patience": 500,
     "trainer_kwargs": {
       "gpus": "0",
       "accelerator": null,
@@ -287,12 +287,16 @@
     }
   },
   "model": {
-    "lr": 0.0005,
+    "lr": 0.001,
     "lr_scheduler": {
       "factor": 0.5623413251903491,
-      "patience": 50,
-      "cooldown": 20,
+      "patience": 100,
+      "cooldown": 50,
       "min_lr": 1e-05
+    },
+    "db_kwargs": {
+      "amin": 1e-05,
+      "top_db": 120
     },
     "c_labels": [
       "pitch"
